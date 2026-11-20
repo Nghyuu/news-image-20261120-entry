@@ -1,163 +1,260 @@
-# Draws entry.png: a front-page poster summing up Friday 20 November 2026.
-# Every headline was verified against a reputable outlet on 20 Nov 2026
-# (IMD via India Today/Mint, Sensor Tower via GameSpot, Reuters, AP, BBC)
-# before drawing. The lead is Cyclone Akvan's landfall at noon IST.
-# Render: python3 draw.py  ->  entry.png (1024x1024, < 1 MiB)
+#!/usr/bin/env python3
+"""Render the 20 November 2026 front-page poster (1024x1024 PNG).
+
+Draws the day's ten verified stories as a newspaper front page: a navy
+masthead, one lead story with a cyclone graphic, a 2x2 grid of ranked
+stories, and a five-column strip for the remaining headlines.
+Run:  python3 draw.py [output-path]   (default: entry.png)
+"""
+
+import sys
+
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 1024, 1024
-NAVY = (22, 33, 62)
-NAVY2 = (42, 58, 99)
-TEAL = (46, 148, 158)
-RED = (179, 49, 42)
-GOLD = (217, 165, 33)
-CREAM = (244, 239, 230)
-CARD = (255, 255, 255)
-BORDER = (201, 194, 178)
-INK = (34, 34, 34)
-GRAY = (107, 107, 107)
+CANVAS_W = 1024
+CANVAS_H = 1024
 
-FB = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FR = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+PAPER = (246, 241, 231)
+NAVY = (26, 35, 64)
+NAVY_DEEP = (18, 25, 48)
+RED = (179, 39, 46)
+GOLD = (212, 160, 32)
+INK = (24, 24, 24)
+BODY_INK = (38, 38, 38)
+MUTED = (110, 105, 95)
+CARD_EDGE = (210, 203, 190)
+WHITE = (255, 255, 255)
+TEAL_A = (64, 164, 178)
+TEAL_B = (38, 122, 140)
+TEAL_C = (110, 200, 210)
+CYCLONE_GOLD = (232, 178, 44)
+
+FONT_DIR = "/usr/share/fonts/truetype/dejavu"
 
 
-def font(path, size):
-    return ImageFont.truetype(path, size)
+def font(name, size):
+    return ImageFont.truetype(f"{FONT_DIR}/{name}", size)
 
 
-def wrap(d, text, f, max_w):
-    words, lines, cur = text.split(), [], ""
-    for w in words:
-        t = (cur + " " + w).strip()
-        if d.textlength(t, font=f) <= max_w:
-            cur = t
+def split_lines(draw, text, fnt, max_w):
+    """Greedy word wrap: returns the lines that fit inside max_w pixels."""
+    lines = []
+    current = ""
+    for word in text.split(" "):
+        trial = word if not current else current + " " + word
+        if draw.textlength(trial, font=fnt) <= max_w or not current:
+            current = trial
         else:
-            if cur:
-                lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
     return lines
 
 
-def para(d, x, y, text, f, max_w, lh, color=INK):
-    for ln in wrap(d, text, f, max_w):
-        d.text((x, y), ln, font=f, fill=color)
-        y += lh
-    return y
+def draw_lines(draw, lines, x, y, fnt, fill, leading):
+    """Draw wrapped lines top-down; returns the y just past the last line."""
+    cursor = y
+    for line in lines:
+        draw.text((x, cursor), line, font=fnt, fill=fill)
+        cursor += leading
+    return cursor
 
 
-def fit(d, text, path, size, max_w):
-    f = font(path, size)
-    while size > 12 and d.textlength(text, font=f) > max_w:
-        size -= 1
-        f = font(path, size)
-    return f
+def masthead(draw):
+    draw.rectangle([0, 0, CANVAS_W, 104], fill=NAVY)
+    title_font = font("DejaVuSans-Bold.ttf", 48)
+    draw.text((28, 20), "THE WORLD IN ONE DAY", font=title_font, fill=WHITE)
+    tag_font = font("DejaVuSans-Bold.ttf", 30)
+    tag = "WORLD NEWS"
+    draw.text(
+        (CANVAS_W - 28 - draw.textlength(tag, font=tag_font), 32),
+        tag,
+        font=tag_font,
+        fill=GOLD,
+    )
+    date_font = font("DejaVuSans.ttf", 23)
+    draw.text((28, 72), "Friday, 20 November 2026", font=date_font, fill=WHITE)
+    draw.rectangle([0, 104, CANVAS_W, 110], fill=RED)
 
 
-img = Image.new("RGB", (W, H), CREAM)
-d = ImageDraw.Draw(img)
+def cyclone_panel(draw, box):
+    """Navy panel with concentric storm rings and a gold eye."""
+    x0, y0, x1, y1 = box
+    draw.rectangle(box, fill=NAVY_DEEP)
+    cx = (x0 + x1) // 2
+    cy = (y0 + y1) // 2 + 6
+    ring = 14
+    shades = [TEAL_A, TEAL_B, TEAL_C]
+    step = 0
+    while ring <= 124:
+        shade = shades[step % len(shades)]
+        draw.ellipse(
+            [cx - ring, cy - ring, cx + ring, cy + ring],
+            outline=shade,
+            width=7,
+        )
+        # A lighter arc segment on each ring suggests the spin.
+        draw.arc(
+            [cx - ring, cy - ring, cx + ring, cy + ring],
+            start=200 + step * 37,
+            end=320 + step * 37,
+            fill=TEAL_C,
+            width=7,
+        )
+        ring += 16
+        step += 1
+    draw.ellipse([cx - 15, cy - 15, cx + 15, cy + 15], fill=CYCLONE_GOLD)
+    label_font = font("DejaVuSans-Bold.ttf", 20)
+    top_label = "BAY OF BENGAL"
+    draw.rectangle(
+        [x0 + 8, y0 + 8, x0 + 14 + draw.textlength(top_label, font=label_font) + 8, y0 + 38],
+        fill=NAVY_DEEP,
+    )
+    draw.text((x0 + 14, y0 + 12), top_label, font=label_font, fill=WHITE)
+    bottom_label = "NOON IST \u00b7 GOPALPUR"
+    draw.rectangle(
+        [x0 + 8, y1 - 42, x0 + 14 + draw.textlength(bottom_label, font=label_font) + 8, y1 - 8],
+        fill=NAVY_DEEP,
+    )
+    draw.text((x0 + 14, y1 - 38), bottom_label, font=label_font, fill=WHITE)
 
-# --- masthead ---
-d.rectangle([0, 0, W, 104], fill=NAVY)
-f_title = fit(d, "THE WORLD IN ONE DAY", FB, 54, 700)
-d.text((24, 18), "THE WORLD IN ONE DAY", font=f_title, fill=(255, 255, 255))
-f_wn = font(FB, 30)
-d.text((W - 24 - d.textlength("WORLD NEWS", font=f_wn), 26), "WORLD NEWS",
-       font=f_wn, fill=GOLD)
-d.text((24, 74), "Friday, 20 November 2026", font=font(FR, 19),
-       fill=(230, 230, 230))
-d.rectangle([0, 104, W, 110], fill=RED)
+
+def lead_story(draw):
+    draw.rectangle([24, 122, 1000, 452], fill=WHITE, outline=CARD_EDGE, width=2)
+    kicker_font = font("DejaVuSans-Bold.ttf", 28)
+    draw.text((44, 138), "CYCLONE AKVAN MAKES LANDFALL", font=kicker_font, fill=RED)
+    head_font = font("DejaVuSans-Bold.ttf", 44)
+    head_lines = split_lines(
+        draw,
+        "Cyclone Akvan hits India's east coast at noon",
+        head_font,
+        604,
+    )
+    end_y = draw_lines(draw, head_lines, 44, 176, head_font, INK, 52)
+    body_font = font("DejaVuSans.ttf", 22)
+    body_lines = split_lines(
+        draw,
+        "Severe Cyclone Akvan made landfall near Gopalpur, Odisha, with "
+        "winds of 90\u2013100 km/h (IMD). More than 100,000 people were "
+        "evacuated to shelters.",
+        body_font,
+        604,
+    )
+    draw_lines(draw, body_lines, 44, end_y + 14, body_font, BODY_INK, 29)
+    cyclone_panel(draw, (668, 138, 984, 436))
 
 
-def card(x, y, w, h):
-    d.rectangle([x, y, x + w, y + h], fill=CARD, outline=BORDER, width=1)
+def grid_card(draw, box, kicker, body):
+    x0, y0, x1, y1 = box
+    draw.rectangle(box, fill=WHITE, outline=CARD_EDGE, width=2)
+    draw.rectangle([x0, y0, x0 + 8, y1], fill=RED)
+    kicker_font = font("DejaVuSans-Bold.ttf", 27)
+    draw.text((x0 + 28, y0 + 14), kicker, font=kicker_font, fill=INK)
+    body_font = font("DejaVuSans.ttf", 20)
+    body_lines = split_lines(draw, body, body_font, x1 - x0 - 56)
+    draw_lines(draw, body_lines, x0 + 28, y0 + 52, body_font, BODY_INK, 26)
 
 
-# --- lead: Cyclone Akvan ---
-card(24, 122, 976, 252)
-d.text((44, 138), "CYCLONE AKVAN MAKES LANDFALL",
-       font=fit(d, "CYCLONE AKVAN MAKES LANDFALL", FB, 29, 546), fill=RED)
-f_h = fit(d, "Storm hits India's east coast", FB, 33, 546)
-d.text((44, 176), "Storm hits India's east coast", font=f_h, fill=INK)
-d.text((44, 214), "at noon, 90–100 km/h winds", font=f_h, fill=INK)
-para(d, 44, 260,
-     "Severe Cyclone Akvan crosses near Gopalpur, Odisha. More than "
-     "100,000 people moved to shelters; schools shut in 11 districts.",
-     font(FR, 18), 540, 24)
-# cyclone panel: spiral bands over a storm coast
-px, py, pw, ph = 610, 142, 370, 212
-d.rectangle([px, py, px + pw, py + ph], fill=NAVY)
-cx, cy = px + pw // 2, py + ph // 2 + 10
-for r in (96, 78, 60, 42, 26):
-    d.arc([cx - r, cy - r, cx + r, cy + r], start=200, end=560, fill=TEAL, width=9)
-    d.arc([cx - r, cy - r, cx + r, cy + r], start=20, end=200, fill=(120, 190, 200), width=9)
-d.ellipse([cx - 12, cy - 12, cx + 12, cy + 12], fill=GOLD)
-d.text((px + 16, py + 8), "BAY OF BENGAL", font=font(FB, 15), fill=(255, 255, 255))
-d.text((px + 16, py + ph - 30), "NOON IST · GOPALPUR", font=font(FB, 15),
-       fill=(255, 255, 255))
+def ranked_grid(draw):
+    stories = [
+        (
+            "GTA VI, DAY TWO",
+            "$1.84bn and 19.05m copies on Sensor Tower's count; streams "
+            "peaked at 7.91m viewers. Take-Two's first official tally is "
+            "expected today.",
+        ),
+        (
+            "SHENZHEN SUMMIT",
+            "A day after the first Trump\u2013Xi\u2013Putin meeting, leaders "
+            "press on in Shenzhen on day two of the summit.",
+        ),
+        (
+            "WORLD COURT",
+            "The ICJ ruled Myanmar committed genocide against the "
+            "Rohingya. The ruling, handed down on 19 November, cannot be "
+            "appealed.",
+        ),
+        (
+            "SEOUL RETRIAL",
+            "South Korea's top court overturns ex-PM Han Duck-soo's "
+            "15-year sentence in part and sends the martial-law case back "
+            "for retrial.",
+        ),
+    ]
+    boxes = [
+        (24, 468, 500, 652),
+        (524, 468, 1000, 652),
+        (24, 668, 500, 852),
+        (524, 668, 1000, 852),
+    ]
+    for box, (kicker, body) in zip(boxes, stories):
+        grid_card(draw, box, kicker, body)
 
-# --- row 2 ---
-card(24, 392, 476, 196)
-d.rectangle([24, 392, 32, 588], fill=RED)
-d.text((48, 410), "GTA VI, DAY TWO", font=font(FB, 25), fill=INK)
-para(d, 48, 452,
-     "The biggest launch ever keeps rolling: $1.84bn and 19m copies on "
-     "Sensor Tower's count, streams peaking at 7.9m. Take-Two's first "
-     "official tally is expected today.",
-     font(FR, 17), 428, 23)
 
-card(524, 392, 476, 196)
-d.rectangle([524, 392, 532, 588], fill=RED)
-d.text((548, 410), "SHENZHEN SUMMIT", font=font(FB, 25), fill=INK)
-para(d, 548, 452,
-     "A day after the first Trump–Xi–Putin meeting, APEC leaders press "
-     "on in Shenzhen. Nuclear arms and the Gulf war top the agenda.",
-     font(FR, 17), 428, 23)
+def bottom_strip(draw):
+    draw.rectangle([24, 868, 1000, 968], fill=NAVY)
+    items = [
+        ("CRIMEAN BRIDGE", "Ukraine hits the bridge; rail traffic halted."),
+        (
+            "FIJI DROUGHT",
+            "Nationwide state of disaster declared over El Ni\u00f1o drought.",
+        ),
+        (
+            "YONGBYON",
+            "IAEA: North Korea is expanding its uranium enrichment plant.",
+        ),
+        (
+            "US\u2013VENEZUELA",
+            "US and Venezuela restore military cooperation.",
+        ),
+        (
+            "COP31",
+            "Latest climate draft drops any reference to fossil fuels.",
+        ),
+    ]
+    col_x = 36
+    col_w = 182
+    gap = 12
+    kicker_font = font("DejaVuSans-Bold.ttf", 18)
+    body_font = font("DejaVuSans.ttf", 16)
+    for kicker, body in items:
+        draw.text((col_x, 878), kicker, font=kicker_font, fill=GOLD)
+        body_lines = split_lines(draw, body, body_font, col_w)
+        draw_lines(draw, body_lines, col_x, 902, body_font, WHITE, 20)
+        col_x += col_w + gap
 
-# --- row 3 ---
-card(24, 604, 476, 196)
-d.rectangle([24, 604, 32, 800], fill=RED)
-d.text((48, 622), "WORLD COURT", font=font(FB, 25), fill=INK)
-para(d, 48, 664,
-     "The ICJ rules Myanmar committed genocide against the Rohingya. "
-     "The ruling cannot be appealed; the world reacts.",
-     font(FR, 17), 428, 23)
 
-card(524, 604, 476, 196)
-d.rectangle([524, 604, 532, 800], fill=RED)
-d.text((548, 622), "SEOUL RETRIAL", font=font(FB, 25), fill=INK)
-para(d, 548, 664,
-     "South Korea's top court overturns ex-PM Han Duck-soo's 15-year "
-     "sentence in part and sends the martial-law case back for retrial.",
-     font(FR, 17), 428, 23)
+def footer(draw):
+    small = font("DejaVuSans.ttf", 16)
+    left = "Sources: IMD \u00b7 Sensor Tower \u00b7 Reuters \u00b7 AP \u00b7 BBC \u2014 20 November 2026"
+    draw.text((24, 978), left, font=small, fill=MUTED)
+    right = "make.fun \u00b7 news-image-20261120"
+    draw.text(
+        (CANVAS_W - 24 - draw.textlength(right, font=small), 978),
+        right,
+        font=small,
+        fill=MUTED,
+    )
 
-# --- bottom strip: five minis ---
-d.rectangle([24, 816, 1000, 948], fill=NAVY)
-minis = [
-    ("CRIMEAN BRIDGE",
-     "Ukraine hits the bridge to Crimea; rail traffic halted."),
-    ("FIJI DROUGHT",
-     "Nationwide state of disaster as El Niño dries water supplies."),
-    ("YONGBYON",
-     "IAEA: North Korea is expanding its uranium enrichment plant."),
-    ("US–VENEZUELA",
-     "Washington and Caracas agree to restore military cooperation."),
-    ("COP31",
-     "Latest climate draft drops any reference to fossil fuels."),
-]
-col_w = 976 // 5
-for i, (head, body) in enumerate(minis):
-    x = 24 + i * col_w + 12
-    d.text((x, 830), head, font=font(FB, 16), fill=GOLD)
-    para(d, x, 856, body, font(FR, 14), col_w - 24, 19, color=(235, 235, 235))
 
-# --- footer ---
-d.text((24, 966), "Sources: IMD · Sensor Tower · Reuters · AP · BBC — 20 November 2026",
-       font=font(FR, 15), fill=GRAY)
-ftr = "make.fun · news-image-20261120"
-d.text((W - 24 - d.textlength(ftr, font=font(FR, 15)), 966), ftr,
-       font=font(FR, 15), fill=GRAY)
+def build():
+    canvas = Image.new("RGB", (CANVAS_W, CANVAS_H), PAPER)
+    draw = ImageDraw.Draw(canvas)
+    masthead(draw)
+    lead_story(draw)
+    ranked_grid(draw)
+    bottom_strip(draw)
+    footer(draw)
+    return canvas
 
-img.save("entry.png", optimize=True)
-print("saved entry.png", img.size)
+
+def main():
+    target = sys.argv[1] if len(sys.argv) > 1 else "entry.png"
+    poster = build()
+    poster.save(target, format="PNG")
+    print(f"wrote {target} ({poster.size[0]}x{poster.size[1]})")
+
+
+if __name__ == "__main__":
+    main()
